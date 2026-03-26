@@ -1,8 +1,7 @@
 const express = require('express');
-const path = require('path');
+const session = require('express-session');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-const session = require('express-session');
 const { createClient } = require('redis');
 const slugify = require('slugify');
 const { v4: uuidv4 } = require('uuid');
@@ -10,159 +9,123 @@ const { v4: uuidv4 } = require('uuid');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Configurações
+// =================================================================
+// CONFIGURAÇÕES BÁSICAS
+// =================================================================
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static('public'));
 
 const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100 });
 app.use('/api/', limiter);
 
+// Sessão simples em memória (sem connect-redis)
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'minha_chave_super_secreta_123456789',
+  secret: 'mododigital-secret-key-2024',
   resave: false,
   saveUninitialized: false,
-  cookie: { maxAge: 1000 * 60 * 60 * 24 }
+  cookie: { maxAge: 24 * 60 * 60 * 1000 }
 }));
 
 // =================================================================
 // REDIS CLIENT
 // =================================================================
-let redisClient = null;
+let redis = null;
 
 async function getRedis() {
-  if (!redisClient) {
-    redisClient = createClient({
+  if (!redis) {
+    redis = createClient({
       url: 'redis://default:JyefUsxHJljfdvs8HACumEyLE7XNgLvG@redis-19242.c266.us-east-1-3.ec2.cloud.redislabs.com:19242'
     });
-    redisClient.on('error', (err) => console.error('Redis Error:', err));
-    redisClient.on('connect', () => console.log('✅ Redis conectado!'));
-    await redisClient.connect();
+    redis.on('error', (err) => console.error('Redis:', err.message));
+    redis.on('connect', () => console.log('✅ Redis conectado'));
+    await redis.connect();
   }
-  return redisClient;
+  return redis;
 }
 
 // =================================================================
-// ARTIGOS - VERSÃO SIMPLES E FUNCIONAL
+// FUNÇÕES DOS ARTIGOS
 // =================================================================
+async function criarArtigo(dados) {
+  const r = await getRedis();
+  const slug = slugify(dados.titulo, { lower: true, strict: true });
+  const id = uuidv4();
+  const agora = new Date().toISOString();
+  
+  const artigo = {
+    id, slug,
+    titulo: dados.titulo,
+    conteudo: dados.conteudo,
+    resumo: dados.conteudo.replace(/<[^>]*>/g, '').substring(0, 160),
+    imagem: dados.imagem || 'https://picsum.photos/id/1/1200/630',
+    autor: dados.autor || 'Admin',
+    categoria: dados.categoria || 'Tecnologia',
+    publicado: 'true',
+    criado: agora,
+    atualizado: agora,
+    views: '0'
+  };
+  
+  // Salvar no Redis
+  await r.hSet(`artigo:${slug}`, 
+    'id', artigo.id,
+    'slug', artigo.slug,
+    'titulo', artigo.titulo,
+    'conteudo', artigo.conteudo,
+    'resumo', artigo.resumo,
+    'imagem', artigo.imagem,
+    'autor', artigo.autor,
+    'categoria', artigo.categoria,
+    'publicado', artigo.publicado,
+    'criado', artigo.criado,
+    'atualizado', artigo.atualizado,
+    'views', artigo.views
+  );
+  
+  await r.sAdd('artigos:todos', slug);
+  await r.zAdd('artigos:publicados', { score: Date.now(), value: slug });
+  await r.sAdd(`artigos:categoria:${artigo.categoria}`, slug);
+  
+  return artigo;
+}
 
-// Criar artigo
-app.post('/api/articles', async (req, res) => {
-  try {
-    const redis = await getRedis();
-    const { title, content, category, author, coverImage } = req.body;
-    
-    if (!title || !content) {
-      return res.status(400).json({ error: 'Título e conteúdo são obrigatórios' });
+async function listarArtigos() {
+  const r = await getRedis();
+  const slugs = await r.zRange('artigos:publicados', 0, -1);
+  const artigos = [];
+  
+  for (const slug of slugs.reverse()) {
+    const artigo = await r.hGetAll(`artigo:${slug}`);
+    if (artigo && Object.keys(artigo).length > 0 && artigo.publicado === 'true') {
+      artigos.push(artigo);
     }
-    
-    const slug = slugify(title, { lower: true, strict: true });
-    const id = uuidv4();
-    const now = new Date().toISOString();
-    
-    const article = {
-      id: id,
-      slug: slug,
-      title: title,
-      content: content,
-      excerpt: content.replace(/<[^>]*>/g, '').substring(0, 160),
-      coverImage: coverImage || 'https://picsum.photos/id/1/1200/630',
-      author: author || 'Admin',
-      category: category || 'Tecnologia',
-      published: 'true',
-      createdAt: now,
-      updatedAt: now,
-      views: '0'
-    };
-    
-    // Salvar no Redis
-    await redis.hSet(`article:${slug}`, 
-      'id', article.id,
-      'slug', article.slug,
-      'title', article.title,
-      'content', article.content,
-      'excerpt', article.excerpt,
-      'coverImage', article.coverImage,
-      'author', article.author,
-      'category', article.category,
-      'published', article.published,
-      'createdAt', article.createdAt,
-      'updatedAt', article.updatedAt,
-      'views', article.views
-    );
-    
-    await redis.sAdd('articles:all', slug);
-    await redis.zAdd('articles:published', { score: Date.now(), value: slug });
-    await redis.sAdd(`articles:category:${article.category}`, slug);
-    
-    console.log('✅ Artigo criado:', slug, title);
-    res.json({ success: true, article });
-    
-  } catch (error) {
-    console.error('Erro:', error);
-    res.status(500).json({ error: error.message });
   }
-});
+  return artigos;
+}
 
-// Listar artigos
-app.get('/api/articles', async (req, res) => {
-  try {
-    const redis = await getRedis();
-    const slugs = await redis.zRange('articles:published', 0, -1);
-    const articles = [];
-    
-    for (const slug of slugs.reverse()) {
-      const article = await redis.hGetAll(`article:${slug}`);
-      if (article && Object.keys(article).length > 0 && article.published === 'true') {
-        articles.push(article);
-      }
-    }
-    
-    res.json({ articles });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Buscar artigo por slug
-app.get('/api/articles/:slug', async (req, res) => {
-  try {
-    const redis = await getRedis();
-    const article = await redis.hGetAll(`article:${req.params.slug}`);
-    
-    if (!article || Object.keys(article).length === 0) {
-      return res.status(404).json({ error: 'Artigo não encontrado' });
-    }
-    
-    // Incrementar views
-    const views = parseInt(article.views || '0') + 1;
-    await redis.hSet(`article:${req.params.slug}`, 'views', views.toString());
-    article.views = views.toString();
-    
-    res.json({ article });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
+async function buscarArtigo(slug) {
+  const r = await getRedis();
+  const artigo = await r.hGetAll(`artigo:${slug}`);
+  
+  if (!artigo || Object.keys(artigo).length === 0) return null;
+  
+  const views = parseInt(artigo.views || '0') + 1;
+  await r.hSet(`artigo:${slug}`, 'views', views.toString());
+  artigo.views = views.toString();
+  
+  return artigo;
+}
 
 // =================================================================
-// FRONTEND - HTML DIRETO
+// PÁGINAS
 // =================================================================
 
-// Página inicial
+// Home
 app.get('/', async (req, res) => {
   try {
-    const redis = await getRedis();
-    const slugs = await redis.zRange('articles:published', 0, -1);
-    const articles = [];
-    
-    for (const slug of slugs.reverse()) {
-      const article = await redis.hGetAll(`article:${slug}`);
-      if (article && Object.keys(article).length > 0 && article.published === 'true') {
-        articles.push(article);
-      }
-    }
+    const artigos = await listarArtigos();
     
     res.send(`
       <!DOCTYPE html>
@@ -173,8 +136,8 @@ app.get('/', async (req, res) => {
         <title>ModoDigital - Blog de Tecnologia</title>
         <script src="https://cdn.tailwindcss.com"></script>
         <style>
-          .article-card { transition: transform 0.2s; }
-          .article-card:hover { transform: translateY(-4px); }
+          .card { transition: transform 0.2s; }
+          .card:hover { transform: translateY(-4px); }
         </style>
       </head>
       <body class="bg-gray-50">
@@ -192,29 +155,29 @@ app.get('/', async (req, res) => {
           </div>
           
           <div class="grid md:grid-cols-3 gap-6">
-            ${articles.map(article => `
-              <div class="bg-white rounded-xl shadow-md overflow-hidden article-card">
-                <img src="${article.coverImage}" class="w-full h-48 object-cover">
+            ${artigos.map(a => `
+              <div class="bg-white rounded-xl shadow-md overflow-hidden card">
+                <img src="${a.imagem}" class="w-full h-48 object-cover">
                 <div class="p-5">
-                  <span class="text-xs text-blue-600 font-semibold">${article.category}</span>
+                  <span class="text-xs text-blue-600 font-semibold">${a.categoria}</span>
                   <h2 class="text-xl font-bold mt-2 mb-3">
-                    <a href="/artigo/${article.slug}" class="hover:text-blue-600">${article.title}</a>
+                    <a href="/artigo/${a.slug}" class="hover:text-blue-600">${a.titulo}</a>
                   </h2>
-                  <p class="text-gray-600 text-sm">${article.excerpt.substring(0, 120)}...</p>
+                  <p class="text-gray-600 text-sm">${a.resumo.substring(0, 120)}...</p>
                   <div class="flex justify-between items-center mt-4 text-xs text-gray-500">
-                    <span>👤 ${article.author}</span>
-                    <span>📅 ${new Date(article.createdAt).toLocaleDateString('pt-BR')}</span>
-                    <span>👁️ ${article.views}</span>
+                    <span>👤 ${a.autor}</span>
+                    <span>📅 ${new Date(a.criado).toLocaleDateString('pt-BR')}</span>
+                    <span>👁️ ${a.views}</span>
                   </div>
                 </div>
               </div>
             `).join('')}
           </div>
           
-          ${articles.length === 0 ? '<p class="text-center text-gray-500 mt-8">Nenhum artigo publicado ainda. <a href="/admin" class="text-blue-600">Crie seu primeiro artigo!</a></p>' : ''}
+          ${artigos.length === 0 ? '<p class="text-center text-gray-500 mt-8">Nenhum artigo ainda. <a href="/admin" class="text-blue-600">Crie o primeiro!</a></p>' : ''}
           
           <div class="mt-12 text-center">
-            <a href="/admin" class="inline-block bg-gray-800 text-white px-6 py-3 rounded-lg hover:bg-gray-700">📝 Área Administrativa</a>
+            <a href="/admin" class="inline-block bg-gray-800 text-white px-6 py-3 rounded-lg hover:bg-gray-700">📝 Área Admin</a>
           </div>
         </main>
         
@@ -224,25 +187,19 @@ app.get('/', async (req, res) => {
       </body>
       </html>
     `);
-  } catch (error) {
-    res.status(500).send(`<h1>Erro</h1><pre>${error.message}</pre>`);
+  } catch (err) {
+    res.status(500).send(`<h1>Erro</h1><pre>${err.message}</pre>`);
   }
 });
 
-// Página do artigo
+// Artigo
 app.get('/artigo/:slug', async (req, res) => {
   try {
-    const redis = await getRedis();
-    const article = await redis.hGetAll(`article:${req.params.slug}`);
+    const artigo = await buscarArtigo(req.params.slug);
     
-    if (!article || Object.keys(article).length === 0 || article.published !== 'true') {
+    if (!artigo) {
       return res.status(404).send('<h1>Artigo não encontrado</h1><a href="/">Voltar</a>');
     }
-    
-    // Incrementar views
-    const views = parseInt(article.views || '0') + 1;
-    await redis.hSet(`article:${req.params.slug}`, 'views', views.toString());
-    article.views = views.toString();
     
     res.send(`
       <!DOCTYPE html>
@@ -250,19 +207,17 @@ app.get('/artigo/:slug', async (req, res) => {
       <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>${article.title} | ModoDigital</title>
-        <meta name="description" content="${article.excerpt}">
-        <meta property="og:title" content="${article.title}">
-        <meta property="og:description" content="${article.excerpt}">
-        <meta property="og:image" content="${article.coverImage}">
+        <title>${artigo.titulo} | ModoDigital</title>
+        <meta name="description" content="${artigo.resumo}">
+        <meta property="og:title" content="${artigo.titulo}">
+        <meta property="og:description" content="${artigo.resumo}">
+        <meta property="og:image" content="${artigo.imagem}">
         <script src="https://cdn.tailwindcss.com"></script>
         <style>
-          .article-content { line-height: 1.8; }
-          .article-content p { margin-bottom: 1rem; }
-          .article-content h2 { font-size: 1.5rem; margin: 1.5rem 0 1rem; font-weight: bold; }
-          .article-content img { max-width: 100%; border-radius: 0.5rem; margin: 1rem 0; }
-          .article-content ul, .article-content ol { margin: 1rem 0 1rem 2rem; }
-          .article-content li { margin: 0.25rem 0; }
+          .conteudo { line-height: 1.8; }
+          .conteudo p { margin-bottom: 1rem; }
+          .conteudo h2 { font-size: 1.5rem; margin: 1.5rem 0 1rem; font-weight: bold; }
+          .conteudo img { max-width: 100%; border-radius: 0.5rem; margin: 1rem 0; }
         </style>
       </head>
       <body class="bg-gray-50">
@@ -275,18 +230,18 @@ app.get('/artigo/:slug', async (req, res) => {
         
         <main class="container mx-auto px-4 py-8 max-w-4xl">
           <article class="bg-white rounded-xl shadow-md p-6 md:p-8">
-            <h1 class="text-3xl md:text-4xl font-bold mb-4">${article.title}</h1>
+            <h1 class="text-3xl md:text-4xl font-bold mb-4">${artigo.titulo}</h1>
             <div class="flex gap-4 text-sm text-gray-500 mb-6">
-              <span>👤 ${article.author}</span>
-              <span>📅 ${new Date(article.createdAt).toLocaleDateString('pt-BR')}</span>
-              <span>👁️ ${article.views} visualizações</span>
+              <span>👤 ${artigo.autor}</span>
+              <span>📅 ${new Date(artigo.criado).toLocaleDateString('pt-BR')}</span>
+              <span>👁️ ${artigo.views} visualizações</span>
             </div>
-            <img src="${article.coverImage}" class="w-full rounded-lg mb-6">
-            <div class="article-content">${article.content}</div>
+            <img src="${artigo.imagem}" class="w-full rounded-lg mb-6">
+            <div class="conteudo">${artigo.conteudo}</div>
           </article>
           
           <div class="mt-8 text-center">
-            <a href="/" class="text-blue-600 hover:underline">← Voltar para o início</a>
+            <a href="/" class="text-blue-600 hover:underline">← Voltar</a>
           </div>
         </main>
         
@@ -296,8 +251,8 @@ app.get('/artigo/:slug', async (req, res) => {
       </body>
       </html>
     `);
-  } catch (error) {
-    res.status(500).send(`<h1>Erro</h1><pre>${error.message}</pre>`);
+  } catch (err) {
+    res.status(500).send(`<h1>Erro</h1><pre>${err.message}</pre>`);
   }
 });
 
@@ -306,21 +261,20 @@ app.get('/artigo/:slug', async (req, res) => {
 // =================================================================
 
 app.get('/admin', (req, res) => {
-  if (req.session.isAdmin) return res.redirect('/admin/dashboard');
+  if (req.session.admin) return res.redirect('/admin/dashboard');
   res.redirect('/admin/login');
 });
 
 app.get('/admin/login', (req, res) => {
-  if (req.session.isAdmin) return res.redirect('/admin/dashboard');
   res.send(`
     <!DOCTYPE html>
     <html>
     <head><title>Admin Login</title><script src="https://cdn.tailwindcss.com"></script></head>
     <body class="bg-gray-100 min-h-screen flex items-center justify-center">
       <div class="bg-white p-8 rounded-lg shadow-lg max-w-md w-full">
-        <h1 class="text-2xl font-bold text-center mb-6">🔐 Admin Login</h1>
+        <h1 class="text-2xl font-bold text-center mb-6">🔐 Login</h1>
         <form method="POST" action="/admin/login">
-          <input type="password" name="password" placeholder="Senha" class="w-full p-3 border rounded-lg mb-4">
+          <input type="password" name="senha" placeholder="Senha" class="w-full p-3 border rounded-lg mb-4">
           <button type="submit" class="w-full bg-blue-600 text-white p-3 rounded-lg hover:bg-blue-700">Entrar</button>
         </form>
         <div class="text-center mt-4"><a href="/" class="text-blue-600">← Voltar</a></div>
@@ -331,108 +285,76 @@ app.get('/admin/login', (req, res) => {
 });
 
 app.post('/admin/login', (req, res) => {
-  if (req.body.password === 'admin123') {
-    req.session.isAdmin = true;
+  if (req.body.senha === 'admin123') {
+    req.session.admin = true;
     res.redirect('/admin/dashboard');
   } else {
-    res.send('<h1>Senha incorreta!</h1><a href="/admin/login">Tentar novamente</a>');
+    res.send('<h1>Senha errada!</h1><a href="/admin/login">Tentar</a>');
   }
 });
 
 app.get('/admin/logout', (req, res) => {
   req.session.destroy();
-  res.redirect('/admin/login');
+  res.redirect('/');
 });
 
 app.get('/admin/dashboard', async (req, res) => {
-  if (!req.session.isAdmin) return res.redirect('/admin/login');
+  if (!req.session.admin) return res.redirect('/admin/login');
+  const artigos = await listarArtigos();
   
-  try {
-    const redis = await getRedis();
-    const slugs = await redis.zRange('articles:published', 0, -1);
-    const articles = [];
-    
-    for (const slug of slugs.reverse()) {
-      const article = await redis.hGetAll(`article:${slug}`);
-      if (article && Object.keys(article).length > 0) {
-        articles.push(article);
-      }
-    }
-    
-    res.send(`
-      <!DOCTYPE html>
-      <html>
-      <head><title>Admin Dashboard</title><script src="https://cdn.tailwindcss.com"></script></head>
-      <body class="bg-gray-100">
-        <div class="container mx-auto px-4 py-8">
-          <div class="bg-white rounded-lg shadow p-6">
-            <h1 class="text-2xl font-bold mb-4">✅ Painel Admin</h1>
-            <p class="mb-4">Total de artigos: <strong>${articles.length}</strong></p>
-            <div class="bg-green-100 p-4 rounded mb-4">✅ Redis Cloud conectado!</div>
-            <div class="flex gap-4 flex-wrap">
-              <a href="/admin/new" class="bg-green-600 text-white px-4 py-2 rounded">📝 Novo Artigo</a>
-              <a href="/admin/articles" class="bg-blue-600 text-white px-4 py-2 rounded">📋 Listar Artigos</a>
-              <a href="/" class="bg-gray-600 text-white px-4 py-2 rounded">🌐 Ver Site</a>
-              <a href="/admin/logout" class="bg-red-600 text-white px-4 py-2 rounded">🚪 Sair</a>
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head><title>Admin</title><script src="https://cdn.tailwindcss.com"></script></head>
+    <body class="bg-gray-100">
+      <div class="container mx-auto px-4 py-8">
+        <div class="bg-white rounded-lg shadow p-6">
+          <h1 class="text-2xl font-bold mb-4">✅ Painel Admin</h1>
+          <p>Total: <strong>${artigos.length}</strong> artigos</p>
+          <div class="bg-green-100 p-3 rounded my-4">✅ Redis conectado!</div>
+          <div class="flex gap-3">
+            <a href="/admin/novo" class="bg-green-600 text-white px-4 py-2 rounded">📝 Novo Artigo</a>
+            <a href="/admin/lista" class="bg-blue-600 text-white px-4 py-2 rounded">📋 Lista</a>
+            <a href="/" class="bg-gray-600 text-white px-4 py-2 rounded">🌐 Site</a>
+            <a href="/admin/logout" class="bg-red-600 text-white px-4 py-2 rounded">🚪 Sair</a>
+          </div>
+        </div>
+      </div>
+    </body>
+    </html>
+  `);
+});
+
+app.get('/admin/lista', async (req, res) => {
+  if (!req.session.admin) return res.redirect('/admin/login');
+  const artigos = await listarArtigos();
+  
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head><title>Artigos</title><script src="https://cdn.tailwindcss.com"></script></head>
+    <body class="bg-gray-100">
+      <div class="container mx-auto px-4 py-8">
+        <div class="bg-white rounded-lg shadow p-6">
+          <h1 class="text-2xl font-bold mb-4">📋 Artigos</h1>
+          <a href="/admin/dashboard" class="text-blue-600">← Voltar</a>
+          ${artigos.map(a => `
+            <div class="border p-3 mb-2 rounded">
+              <h3 class="font-bold">${a.titulo}</h3>
+              <p class="text-sm text-gray-500">${a.categoria} | ${a.autor} | ${new Date(a.criado).toLocaleDateString()}</p>
+              <a href="/artigo/${a.slug}" target="_blank" class="text-blue-600 text-sm">Ver</a>
             </div>
-          </div>
+          `).join('')}
+          ${artigos.length === 0 ? '<p>Nenhum artigo</p>' : ''}
         </div>
-      </body>
-      </html>
-    `);
-  } catch (error) {
-    res.status(500).send('Erro');
-  }
+      </div>
+    </body>
+    </html>
+  `);
 });
 
-app.get('/admin/articles', async (req, res) => {
-  if (!req.session.isAdmin) return res.redirect('/admin/login');
-  
-  try {
-    const redis = await getRedis();
-    const slugs = await redis.zRange('articles:published', 0, -1);
-    const articles = [];
-    
-    for (const slug of slugs.reverse()) {
-      const article = await redis.hGetAll(`article:${slug}`);
-      if (article && Object.keys(article).length > 0) {
-        articles.push(article);
-      }
-    }
-    
-    res.send(`
-      <!DOCTYPE html>
-      <html>
-      <head><title>Artigos</title><script src="https://cdn.tailwindcss.com"></script></head>
-      <body class="bg-gray-100">
-        <div class="container mx-auto px-4 py-8">
-          <div class="bg-white rounded-lg shadow p-6">
-            <h1 class="text-2xl font-bold mb-4">📋 Todos os Artigos</h1>
-            <a href="/admin/dashboard" class="text-blue-600 mb-4 inline-block">← Voltar</a>
-            ${articles.map(a => `
-              <div class="border rounded-lg p-4 mb-3 flex justify-between items-center">
-                <div>
-                  <h3 class="font-bold">${a.title}</h3>
-                  <p class="text-sm text-gray-500">${a.category} | ${a.author} | ${new Date(a.createdAt).toLocaleDateString('pt-BR')}</p>
-                </div>
-                <div class="flex gap-2">
-                  <a href="/artigo/${a.slug}" target="_blank" class="bg-blue-600 text-white px-3 py-1 rounded text-sm">Ver</a>
-                </div>
-              </div>
-            `).join('')}
-            ${articles.length === 0 ? '<p class="text-center text-gray-500">Nenhum artigo criado ainda.</p>' : ''}
-          </div>
-        </div>
-      </body>
-      </html>
-    `);
-  } catch (error) {
-    res.status(500).send('Erro');
-  }
-});
-
-app.get('/admin/new', (req, res) => {
-  if (!req.session.isAdmin) return res.redirect('/admin/login');
+app.get('/admin/novo', (req, res) => {
+  if (!req.session.admin) return res.redirect('/admin/login');
   res.send(`
     <!DOCTYPE html>
     <html>
@@ -440,36 +362,20 @@ app.get('/admin/new', (req, res) => {
     <body class="bg-gray-100">
       <div class="container mx-auto px-4 py-8 max-w-4xl">
         <div class="bg-white rounded-lg shadow p-6">
-          <h1 class="text-2xl font-bold mb-4">📝 Criar Novo Artigo</h1>
-          <form method="POST" action="/admin/new">
-            <div class="mb-4">
-              <label class="block font-bold mb-2">Título *</label>
-              <input type="text" name="title" class="w-full p-3 border rounded" required>
-            </div>
-            <div class="mb-4">
-              <label class="block font-bold mb-2">Categoria</label>
-              <select name="category" class="w-full p-3 border rounded">
-                <option value="Tecnologia">Tecnologia</option>
-                <option value="Marketing">Marketing</option>
-                <option value="Produtividade">Produtividade</option>
-              </select>
-            </div>
-            <div class="mb-4">
-              <label class="block font-bold mb-2">Autor</label>
-              <input type="text" name="author" value="Admin" class="w-full p-3 border rounded">
-            </div>
-            <div class="mb-4">
-              <label class="block font-bold mb-2">URL da Imagem (opcional)</label>
-              <input type="text" name="coverImage" placeholder="https://picsum.photos/id/1/1200/630" class="w-full p-3 border rounded">
-            </div>
-            <div class="mb-4">
-              <label class="block font-bold mb-2">Conteúdo *</label>
-              <textarea name="content" rows="12" class="w-full p-3 border rounded font-mono text-sm" required></textarea>
-              <p class="text-xs text-gray-500 mt-1">Você pode usar HTML: &lt;p&gt;, &lt;h2&gt;, &lt;img&gt;, &lt;ul&gt;, &lt;li&gt;, etc.</p>
-            </div>
-            <div class="flex gap-3">
-              <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">💾 Publicar Artigo</button>
-              <a href="/admin/dashboard" class="bg-gray-500 text-white px-6 py-2 rounded hover:bg-gray-600">Cancelar</a>
+          <h1 class="text-2xl font-bold mb-4">✏️ Criar Artigo</h1>
+          <form method="POST" action="/admin/novo">
+            <input type="text" name="titulo" placeholder="Título" class="w-full p-3 border rounded mb-3" required>
+            <select name="categoria" class="w-full p-3 border rounded mb-3">
+              <option value="Tecnologia">Tecnologia</option>
+              <option value="Marketing">Marketing</option>
+              <option value="Produtividade">Produtividade</option>
+            </select>
+            <input type="text" name="autor" value="Admin" class="w-full p-3 border rounded mb-3">
+            <input type="text" name="imagem" placeholder="URL da imagem" class="w-full p-3 border rounded mb-3">
+            <textarea name="conteudo" rows="12" class="w-full p-3 border rounded font-mono" required></textarea>
+            <div class="flex gap-3 mt-4">
+              <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded">Publicar</button>
+              <a href="/admin/dashboard" class="bg-gray-500 text-white px-6 py-2 rounded">Cancelar</a>
             </div>
           </form>
         </div>
@@ -479,79 +385,34 @@ app.get('/admin/new', (req, res) => {
   `);
 });
 
-app.post('/admin/new', async (req, res) => {
-  if (!req.session.isAdmin) return res.redirect('/admin/login');
+app.post('/admin/novo', async (req, res) => {
+  if (!req.session.admin) return res.redirect('/admin/login');
   
   try {
-    const redis = await getRedis();
-    const { title, content, category, author, coverImage } = req.body;
-    
-    if (!title || !content) {
-      throw new Error('Título e conteúdo são obrigatórios');
-    }
-    
-    const slug = slugify(title, { lower: true, strict: true });
-    const id = uuidv4();
-    const now = new Date().toISOString();
-    
-    const article = {
-      id: id,
-      slug: slug,
-      title: title,
-      content: content,
-      excerpt: content.replace(/<[^>]*>/g, '').substring(0, 160),
-      coverImage: coverImage || 'https://picsum.photos/id/1/1200/630',
-      author: author || 'Admin',
-      category: category || 'Tecnologia',
-      published: 'true',
-      createdAt: now,
-      updatedAt: now,
-      views: '0'
-    };
-    
-    await redis.hSet(`article:${slug}`, 
-      'id', article.id,
-      'slug', article.slug,
-      'title', article.title,
-      'content', article.content,
-      'excerpt', article.excerpt,
-      'coverImage', article.coverImage,
-      'author', article.author,
-      'category', article.category,
-      'published', article.published,
-      'createdAt', article.createdAt,
-      'updatedAt', article.updatedAt,
-      'views', article.views
-    );
-    
-    await redis.sAdd('articles:all', slug);
-    await redis.zAdd('articles:published', { score: Date.now(), value: slug });
-    await redis.sAdd(`articles:category:${article.category}`, slug);
-    
-    console.log('✅ Artigo criado:', slug, title);
-    res.redirect('/admin/articles');
-    
-  } catch (error) {
-    console.error('Erro:', error);
-    res.status(500).send(`
-      <h1>Erro ao criar artigo</h1>
-      <p>${error.message}</p>
-      <a href="/admin/new">Voltar</a>
-    `);
+    await criarArtigo({
+      titulo: req.body.titulo,
+      conteudo: req.body.conteudo,
+      categoria: req.body.categoria,
+      autor: req.body.autor,
+      imagem: req.body.imagem
+    });
+    res.redirect('/admin/lista');
+  } catch (err) {
+    res.send(`<h1>Erro</h1><pre>${err.message}</pre><a href="/admin/novo">Voltar</a>`);
   }
 });
 
 // =================================================================
 // TESTE
 // =================================================================
-app.get('/redis-test', async (req, res) => {
+app.get('/test-redis', async (req, res) => {
   try {
-    const redis = await getRedis();
-    await redis.set('test', 'ok');
-    const test = await redis.get('test');
-    res.json({ status: 'ok', redis: 'conectado', test });
-  } catch (error) {
-    res.json({ status: 'error', error: error.message });
+    const r = await getRedis();
+    await r.set('teste', 'ok');
+    const val = await r.get('teste');
+    res.json({ ok: true, redis: val });
+  } catch (err) {
+    res.json({ ok: false, erro: err.message });
   }
 });
 
@@ -561,5 +422,5 @@ app.get('/redis-test', async (req, res) => {
 if (process.env.VERCEL) {
   module.exports = app;
 } else {
-  app.listen(3000, () => console.log('🚀 Servidor rodando em http://localhost:3000'));
+  app.listen(PORT, () => console.log(`🚀 Servidor em http://localhost:${PORT}`));
 }
