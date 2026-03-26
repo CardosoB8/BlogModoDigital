@@ -1,0 +1,69 @@
+<%- include('partials/admin-header') %>
+
+<div class="p-6">
+    <h1 class="text-2xl font-bold mb-6">Dashboard</h1>
+    
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div class="bg-white rounded-xl shadow p-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-gray-500 text-sm">Total de Artigos</p>
+                    <p class="text-3xl font-bold"><%= totalArticles %></p>
+                </div>
+                <i class="fas fa-newspaper text-4xl text-blue-500"></i>
+            </div>
+        </div>
+        
+        <div class="bg-white rounded-xl shadow p-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-gray-500 text-sm">Categorias</p>
+                    <p class="text-3xl font-bold"><%= categories.length %></p>
+                </div>
+                <i class="fas fa-tags text-4xl text-green-500"></i>
+            </div>
+        </div>
+        
+        <div class="bg-white rounded-xl shadow p-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-gray-500 text-sm">Visualizações Totais</p>
+                    <p class="text-3xl font-bold"><%= popularArticles.reduce((sum, a) => sum + parseInt(a.views), 0) %></p>
+                </div>
+                <i class="fas fa-chart-line text-4xl text-purple-500"></i>
+            </div>
+        </div>
+    </div>
+    
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="bg-white rounded-xl shadow p-6">
+            <h2 class="text-lg font-bold mb-4">Artigos Mais Lidos</h2>
+            <div class="space-y-3">
+                <% popularArticles.forEach(article => { %>
+                    <div class="flex justify-between items-center">
+                        <a href="/admin/articles/edit/<%= article.slug %>" class="hover:text-blue-600">
+                            <%= article.title %>
+                        </a>
+                        <span class="text-sm text-gray-500"><%= article.views %> views</span>
+                    </div>
+                <% }) %>
+            </div>
+        </div>
+        
+        <div class="bg-white rounded-xl shadow p-6">
+            <h2 class="text-lg font-bold mb-4">Artigos Recentes</h2>
+            <div class="space-y-3">
+                <% recentArticles.forEach(article => { %>
+                    <div class="flex justify-between items-center">
+                        <a href="/admin/articles/edit/<%= article.slug %>" class="hover:text-blue-600">
+                            <%= article.title %>
+                        </a>
+                        <span class="text-xs text-gray-500"><%= new Date(article.createdAt).toLocaleDateString('pt-BR') %></span>
+                    </div>
+                <% }) %>
+            </div>
+        </div>
+    </div>
+</div>
+
+<%- include('partials/admin-footer') %>

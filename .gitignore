@@ -1,0 +1,29 @@
+# Dependências
+node_modules/
+npm-debug.log*
+
+# Arquivos de ambiente
+.env
+.env.local
+
+# Logs
+logs/
+*.log
+
+# Arquivos do sistema Android
+.DS_Store
+Thumbs.db
+.android/
+.download/
+
+# Redis
+dump.rdb
+
+# IDE
+.vscode/
+.idea/
+
+# Arquivos temporários
+*.tmp
+*.temp
+*~

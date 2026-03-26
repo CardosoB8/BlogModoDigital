@@ -1,0 +1,57 @@
+<footer class="bg-gray-900 text-gray-300 mt-12 pt-12 pb-6">
+    <div class="container mx-auto px-5 lg:px-8">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
+            <div>
+                <h3 class="text-white text-xl font-bold mb-3"><%= siteConfig.title %></h3>
+                <p class="text-sm text-gray-400"><%= siteConfig.description %></p>
+            </div>
+            <div>
+                <h4 class="font-semibold text-white mb-3">Links Úteis</h4>
+                <ul class="space-y-2 text-sm">
+                    <li><a href="/" class="hover:text-blue-400 transition">Início</a></li>
+                    <li><a href="/admin/login" class="hover:text-blue-400 transition">Área Administrativa</a></li>
+                </ul>
+            </div>
+            <div>
+                <h4 class="font-semibold text-white mb-3">Redes Sociais</h4>
+                <div class="flex gap-3 text-xl">
+                    <i class="fab fa-facebook hover:text-blue-400 cursor-pointer transition"></i>
+                    <i class="fab fa-twitter hover:text-blue-400 cursor-pointer transition"></i>
+                    <i class="fab fa-instagram hover:text-pink-400 cursor-pointer transition"></i>
+                </div>
+            </div>
+        </div>
+        <div class="border-t border-gray-800 pt-6 text-center text-xs text-gray-500">
+            &copy; 2026 <%= siteConfig.title %> - Todos os direitos reservados
+        </div>
+    </div>
+</footer>
+
+<script>
+    // Mobile menu toggle
+    const mobileMenuBtn = document.createElement('button');
+    mobileMenuBtn.className = 'md:hidden w-9 h-9 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center';
+    mobileMenuBtn.innerHTML = '<i class="fas fa-bars"></i>';
+    document.querySelector('header .flex').insertBefore(mobileMenuBtn, document.querySelector('header .flex .flex'));
+    
+    const mobileNav = document.createElement('div');
+    mobileNav.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 hidden';
+    mobileNav.innerHTML = `
+        <div class="bg-white dark:bg-gray-800 w-64 h-full p-6">
+            <button class="float-right text-2xl">&times;</button>
+            <nav class="flex flex-col gap-4 mt-8">
+                <a href="/" class="hover:text-blue-600">Início</a>
+                <a href="/?categoria=Tecnologia" class="hover:text-blue-600">Tecnologia</a>
+                <a href="/?categoria=Marketing" class="hover:text-blue-600">Marketing</a>
+                <a href="/?categoria=Produtividade" class="hover:text-blue-600">Produtividade</a>
+            </nav>
+        </div>
+    `;
+    document.body.appendChild(mobileNav);
+    
+    mobileMenuBtn.addEventListener('click', () => mobileNav.classList.remove('hidden'));
+    mobileNav.querySelector('button').addEventListener('click', () => mobileNav.classList.add('hidden'));
+    mobileNav.addEventListener('click', (e) => {
+        if (e.target === mobileNav) mobileNav.classList.add('hidden');
+    });
+</script>

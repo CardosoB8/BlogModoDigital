@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <%- metaTags %>
+    <link href="https://cdn.tailwindcss.com" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <%- jsonLd %>
+    <style>
+        body { font-family: 'Inter', sans-serif; transition: background-color 0.2s; }
+        .prose-custom { max-width: 100%; }
+        .prose-custom h1 { font-size: 2rem; font-weight: 700; margin: 1.5rem 0 1rem; }
+        .prose-custom h2 { font-size: 1.5rem; font-weight: 600; margin: 1.2rem 0 0.8rem; }
+        .prose-custom h3 { font-size: 1.25rem; font-weight: 600; margin: 1rem 0 0.5rem; }
+        .prose-custom p { margin-bottom: 1rem; line-height: 1.7; }
+        .prose-custom img { max-width: 100%; height: auto; border-radius: 8px; margin: 1rem 0; }
+        .prose-custom ul, .prose-custom ol { margin: 1rem 0 1rem 2rem; }
+        .prose-custom li { margin: 0.3rem 0; }
+        .prose-custom blockquote { border-left: 4px solid #3b82f6; padding-left: 1rem; margin: 1rem 0; font-style: italic; color: #4b5563; }
+        .dark .prose-custom blockquote { color: #9ca3af; }
+        .prose-custom a { color: #3b82f6; text-decoration: underline; }
+        .prose-custom pre { background: #1e293b; color: #e2e8f0; padding: 1rem; border-radius: 8px; overflow-x: auto; }
+        .prose-custom code { background: #f1f5f9; padding: 0.2rem 0.4rem; border-radius: 4px; font-size: 0.875rem; }
+        .dark .prose-custom code { background: #334155; }
+    </style>
+</head>
+<body class="bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200">
+    <%- body %>
+    <script>
+        // Dark mode toggle
+        if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
+        
+        document.getElementById('darkModeToggle')?.addEventListener('click', () => {
+            if (document.documentElement.classList.contains('dark')) {
+                document.documentElement.classList.remove('dark');
+                localStorage.theme = 'light';
+            } else {
+                document.documentElement.classList.add('dark');
+                localStorage.theme = 'dark';
+            }
+        });
+    </script>
+</body>
+</html>
