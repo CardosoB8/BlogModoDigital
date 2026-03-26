@@ -1,22 +1,14 @@
 {
-  "name": "mododigital-blog",
+  "name": "mododigital",
   "version": "1.0.0",
-  "description": "Blog profissional com SEO e Redis Cloud",
-  "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "vercel-build": "npm install"
+    "start": "node server.js"
   },
   "dependencies": {
     "express": "^4.18.2",
-    "redis": "^4.6.10",
-    "express-session": "^1.17.3",
-    "helmet": "^7.1.0",
-    "express-rate-limit": "^6.10.0",
-    "slugify": "^1.6.6",
-    "uuid": "^9.0.1"
+    "redis": "^4.6.10"
   },
   "engines": {
-    "node": "24.x"
+    "node": "18.x"
   }
 }
