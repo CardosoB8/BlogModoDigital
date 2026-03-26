@@ -1,32 +1,24 @@
 const redis = require('redis');
 
-// Configuração do Redis com suas credenciais
-const redisClient = redis.createClient({
-    url: 'redis://default:JyefUsxHJljfdvs8HACumEyLE7XNgLvG@redis-19242.c266.us-east-1-3.ec2.cloud.redislabs.com:19242'
-});
+let redisClient = null;
 
-redisClient.on('error', (err) => {
-    console.error('❌ Redis Client Error:', err);
-});
-
-redisClient.on('connect', () => {
+async function getRedisClient() {
+  if (!redisClient) {
+    redisClient = redis.createClient({
+      url: process.env.REDIS_URL || 'redis://default:JyefUsxHJljfdvs8HACumEyLE7XNgLvG@redis-19242.c266.us-east-1-3.ec2.cloud.redislabs.com:19242',
+      socket: {
+        reconnectStrategy: false
+      }
+    });
+    
+    redisClient.on('error', (err) => {
+      console.error('Redis Client Error:', err);
+    });
+    
+    await redisClient.connect();
     console.log('✅ Conectado ao Redis Cloud!');
-});
-
-redisClient.on('ready', () => {
-    console.log('🚀 Redis está pronto para uso');
-});
-
-// Função para conectar (async/await)
-async function connectRedis() {
-    if (!redisClient.isOpen) {
-        await redisClient.connect();
-    }
-    return redisClient;
+  }
+  return redisClient;
 }
 
-// Exportar cliente e função de conexão
-module.exports = { 
-    redisClient,
-    connectRedis 
-};
+module.exports = { getRedisClient, redisClient: null };
