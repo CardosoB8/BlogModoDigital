@@ -4,32 +4,32 @@
     "titulo": "IA no marketing: como automatizar campanhas",
     "categoria": "Marketing",
     "autor": "Carla Mendes",
-    "imagem": "https://picsum.photos/id/26/800/400",
-    "resumo": "Descubra ferramentas de IA que estão revolucionando o tráfego pago.",
-    "conteudo": "<p>A inteligência artificial está transformando o marketing digital. Ferramentas como ChatGPT, Midjourney e plataformas de automação permitem criar campanhas mais eficientes e personalizadas.</p><h2>Benefícios da IA no Marketing</h2><p>Automação de tarefas repetitivas, análise de dados em tempo real, personalização em escala e otimização de ROI são apenas alguns dos benefícios.</p><p>Com a IA, é possível prever comportamentos, segmentar audiências com precisão cirúrgica e criar conteúdo relevante em escala.</p>",
-    "data": "2026-03-15T10:00:00.000Z",
-    "visualizacoes": 150
+    "imagem": "https://images.unsplash.com/photo-1677442136019-21780ecad995?w=800&h=400&fit=crop",
+    "resumo": "Descubra como a inteligência artificial está revolucionando o marketing digital e automatizando campanhas com resultados impressionantes.",
+    "conteudo": "<p>A inteligência artificial está transformando o marketing digital de maneiras que não imaginávamos há alguns anos. Ferramentas como ChatGPT, Midjourney e plataformas de automação estão permitindo que profissionais de marketing criem campanhas mais eficientes, personalizadas e com melhor ROI.</p><h2>O que é IA no Marketing?</h2><p>Inteligência Artificial no marketing é o uso de algoritmos e machine learning para analisar dados, prever comportamentos e automatizar decisões de marketing. Isso inclui desde a criação de conteúdo até a otimização de lances em anúncios pagos.</p><h2>Principais Aplicações</h2><h3>1. Personalização em Escala</h3><p>A IA permite criar experiências personalizadas para cada usuário, analisando seu comportamento e preferências em tempo real. Isso aumenta significativamente as taxas de conversão.</p><h3>2. Chatbots e Atendimento</h3><p>Assistentes virtuais com IA podem atender clientes 24/7, responder perguntas frequentes e até realizar vendas, liberando sua equipe para tarefas mais estratégicas.</p><h3>3. Análise Preditiva</h3><p>Preveja quais leads têm mais chance de conversão, quais produtos um cliente pode comprar e qual é o melhor momento para enviar uma campanha.</p><h2>Ferramentas Recomendadas</h2><ul><li><strong>ChatGPT:</strong> Para criação de conteúdo e brainstorming</li><li><strong>HubSpot:</strong> Automação de marketing com IA</li><li><strong>Google Analytics 4:</strong> Insights preditivos</li><li><strong>Midjourney:</strong> Criação de imagens para campanhas</li></ul><p>O futuro do marketing é cada vez mais inteligente e automatizado. As empresas que adotarem IA agora estarão à frente da concorrência nos próximos anos.</p>",
+    "data": "2026-03-20T10:00:00.000Z",
+    "visualizacoes": 342
   },
   {
     "slug": "5-dicas-para-produtividade-extrema",
     "titulo": "5 dicas para produtividade extrema",
     "categoria": "Produtividade",
     "autor": "Rafael Lima",
-    "imagem": "https://picsum.photos/id/0/800/400",
-    "resumo": "Método Pomodoro e gestão de energia para render mais.",
-    "conteudo": "<p>Aumentar a produtividade não é sobre trabalhar mais, mas sim trabalhar de forma inteligente.</p><h2>1. Método Pomodoro</h2><p>Trabalhe em blocos de 25 minutos com pausas de 5 minutos. Após 4 ciclos, faça uma pausa maior de 15-30 minutos.</p><h2>2. Priorize tarefas</h2><p>Use a matriz de Eisenhower para classificar o que é urgente e importante. Foque no que realmente importa.</p><h2>3. Elimine distrações</h2><p>Desative notificações, use bloqueadores de sites e crie um ambiente de trabalho focado.</p>",
-    "data": "2026-03-10T10:00:00.000Z",
-    "visualizacoes": 98
+    "imagem": "https://images.unsplash.com/photo-1506784365847-bbad939e9335?w=800&h=400&fit=crop",
+    "resumo": "Aumente sua produtividade com estas 5 dicas práticas baseadas em ciência e experiência de grandes profissionais.",
+    "conteudo": "<p>Ser produtivo não é sobre trabalhar mais horas, mas sim sobre fazer mais em menos tempo, com qualidade e sem se esgotar. Aqui estão 5 estratégias que vão transformar sua forma de trabalhar.</p><h2>1. Método Pomodoro</h2><p>Trabalhe em blocos de 25 minutos focados, seguidos de 5 minutos de pausa. Após 4 ciclos, faça uma pausa maior de 15-30 minutos. Isso mantém seu cérebro focado e evita a fadiga mental.</p><h2>2. Matriz de Eisenhower</h2><p>Classifique suas tarefas em quatro quadrantes:<br><strong>Urgente e Importante:</strong> Faça agora<br><strong>Importante mas não Urgente:</strong> Agende<br><strong>Urgente mas não Importante:</strong> Delegue<br><strong>Não Urgente e não Importante:</strong> Elimine</p><h2>3. Regra dos 2 Minutos</h2><p>Se uma tarefa pode ser feita em menos de 2 minutos, faça imediatamente. Não adie o que é rápido de resolver.</p><h2>4. Deep Work</h2><p>Reserve blocos de 2 a 4 horas para trabalho profundo, sem interrupções. Desligue notificações, feche abas desnecessárias e foque em uma única tarefa de alta complexidade.</p><h2>5. Limite de Decisões</h2><p>Reduza o número de decisões que precisa tomar diariamente. Planeje refeições, roupas e pequenas tarefas com antecedência para preservar energia mental para o que realmente importa.</p><p>Comece aplicando uma dessas técnicas hoje e aumente gradualmente. A produtividade é um hábito que se constrói!</p>",
+    "data": "2026-03-18T10:00:00.000Z",
+    "visualizacoes": 287
   },
   {
     "slug": "react-vs-vue-qual-escolher-em-2026",
     "titulo": "React vs Vue: qual escolher em 2026",
     "categoria": "Tecnologia",
     "autor": "Ana Torres",
-    "imagem": "https://picsum.photos/id/1/800/400",
-    "resumo": "Comparativo entre os principais frameworks front-end do mercado.",
-    "conteudo": "<p>React e Vue são dois dos frameworks JavaScript mais populares. Ambos têm suas vantagens e desvantagens.</p><h2>React</h2><p>Desenvolvido pelo Facebook, React tem uma curva de aprendizado mais íngreme mas oferece mais flexibilidade. Ecossistema enorme e mercado de trabalho aquecido.</p><h2>Vue</h2><p>Vue é mais fácil de aprender, tem uma documentação excelente e é perfeito para projetos menores ou equipes iniciantes.</p><h2>Qual escolher?</h2><p>Se você busca empregabilidade, React é a escolha. Se quer algo mais simples e rápido, Vue é excelente.</p>",
-    "data": "2026-03-05T10:00:00.000Z",
-    "visualizacoes": 210
+    "imagem": "https://images.unsplash.com/photo-1633356122544-f134324a6cee?w=800&h=400&fit=crop",
+    "resumo": "Comparativo detalhado entre os dois principais frameworks front-end para te ajudar na escolha certa para seu projeto.",
+    "conteudo": "<p>React e Vue são os frameworks JavaScript mais populares do mercado. Ambos têm suas vantagens e desvantagens, e a escolha depende muito do seu contexto. Vamos analisar os principais pontos.</p><h2>React - O Gigante do Mercado</h2><p>Desenvolvido e mantido pelo Facebook (agora Meta), React é o framework mais utilizado no mercado corporativo.</p><p><strong>Vantagens:</strong><br>- Ecossistema gigantesco<br>- Mercado de trabalho aquecido<br>- Flexibilidade total<br>- React Native para mobile</p><p><strong>Desvantagens:</strong><br>- Curva de aprendizado mais íngreme<br>- Configuração inicial complexa<br>- Muitas escolhas para fazer (roteamento, estado, etc)</p><h2>Vue - Simplicidade e Poder</h2><p>Criado por Evan You, Vue tem ganhado popularidade por sua curva de aprendizado suave e excelente documentação.</p><p><strong>Vantagens:</strong><br>- Fácil de aprender e começar<br>- Documentação excelente<br>- Performance nativa muito boa<br>- Single File Components intuitivos</p><p><strong>Desvantagens:</strong><br>- Mercado menor que React<br>- Ecossistema menos maduro<br>- Menos vagas de emprego</p><h2>Qual Escolher?</h2><p><strong>Escolha React se:</strong><br>- Você busca empregabilidade<br>- Trabalha em grandes empresas<br>- Precisa de React Native para mobile</p><p><strong>Escolha Vue se:</strong><br>- Está começando no front-end<br>- Trabalha em projetos pessoais ou startups<br>- Valoriza simplicidade e velocidade de desenvolvimento</p><p>Ambos são excelentes e vão continuar dominando o mercado em 2026. O mais importante é dominar os fundamentos de JavaScript!</p>",
+    "data": "2026-03-15T10:00:00.000Z",
+    "visualizacoes": 523
   }
 ]
