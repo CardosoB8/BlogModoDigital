@@ -1,0 +1,96 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "server.js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "public/**/*",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/",
+      "dest": "/server.js"
+    },
+    {
+      "src": "/artigo/(.*)",
+      "dest": "/server.js"
+    },
+    {
+      "src": "/categoria/(.*)",
+      "dest": "/server.js"
+    },
+    {
+      "src": "/buscar",
+      "dest": "/server.js"
+    },
+    {
+      "src": "/admin/(.*)",
+      "dest": "/server.js"
+    },
+    {
+      "src": "/api/(.*)",
+      "dest": "/server.js"
+    },
+    {
+      "src": "/sitemap.xml",
+      "dest": "/server.js"
+    },
+    {
+      "src": "/robots.txt",
+      "dest": "/server.js"
+    },
+    {
+      "src": "/redis-test",
+      "dest": "/server.js"
+    },
+    {
+      "src": "/public/(.*)",
+      "dest": "/public/$1"
+    },
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/server.js"
+    }
+  ],
+  "env": {
+    "REDIS_URL": "redis://default:JyefUsxHJljfdvs8HACumEyLE7XNgLvG@redis-19242.c266.us-east-1-3.ec2.cloud.redislabs.com:19242",
+    "SESSION_SECRET": "minha_chave_super_secreta_123456789",
+    "ADMIN_PASSWORD": "admin123",
+    "SITE_TITLE": "ModoDigital",
+    "SITE_DESCRIPTION": "Dicas e tutoriais para sua vida digital",
+    "SITE_URL": "https://mododigital.vercel.app",
+    "NODE_ENV": "production"
+  },
+  "functions": {
+    "server.js": {
+      "memory": 1024,
+      "maxDuration": 10
+    }
+  },
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "X-XSS-Protection",
+          "value": "1; mode=block"
+        }
+      ]
+    }
+  ]
+}
