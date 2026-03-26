@@ -5,7 +5,6 @@ const rateLimit = require('express-rate-limit');
 const session = require('express-session');
 const compression = require('compression');
 const { createClient } = require('redis');
-const RedisStore = require('connect-redis').default;
 const slugify = require('slugify');
 const { v4: uuidv4 } = require('uuid');
 
@@ -18,15 +17,7 @@ const PORT = process.env.PORT || 3000;
 app.set('trust proxy', 1);
 
 app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'", "https://cdn.tailwindcss.com", "https://fonts.googleapis.com", "https://cdnjs.cloudflare.com"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.tailwindcss.com", "https://cdnjs.cloudflare.com"],
-      fontSrc: ["'self'", "https://fonts.gstatic.com", "https://cdnjs.cloudflare.com"],
-      imgSrc: ["'self'", "data:", "https:", "http:"],
-    },
-  },
+  contentSecurityPolicy: false
 }));
 
 app.use(compression());
@@ -42,31 +33,8 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// =================================================================
-// CONFIGURAÇÃO DO REDIS
-// =================================================================
-let redisClient = null;
-
-async function getRedisClient() {
-  if (!redisClient) {
-    redisClient = createClient({
-      url: process.env.REDIS_URL || 'redis://default:JyefUsxHJljfdvs8HACumEyLE7XNgLvG@redis-19242.c266.us-east-1-3.ec2.cloud.redislabs.com:19242',
-      socket: {
-        reconnectStrategy: false
-      }
-    });
-    
-    redisClient.on('error', (err) => console.error('Redis Error:', err));
-    redisClient.on('connect', () => console.log('✅ Redis conectado!'));
-    
-    await redisClient.connect();
-  }
-  return redisClient;
-}
-
-// Sessão com Redis
+// Sessão em memória (simples para Vercel)
 app.use(session({
-  store: new RedisStore({ client: redisClient, prefix: 'sess:' }),
   secret: process.env.SESSION_SECRET || 'minha_chave_super_secreta_123456789',
   resave: false,
   saveUninitialized: false,
@@ -76,6 +44,25 @@ app.use(session({
     maxAge: 1000 * 60 * 60 * 24
   }
 }));
+
+// =================================================================
+// CONFIGURAÇÃO DO REDIS
+// =================================================================
+let redisClient = null;
+
+async function getRedisClient() {
+  if (!redisClient) {
+    redisClient = createClient({
+      url: process.env.REDIS_URL || 'redis://default:JyefUsxHJljfdvs8HACumEyLE7XNgLvG@redis-19242.c266.us-east-1-3.ec2.cloud.redislabs.com:19242'
+    });
+    
+    redisClient.on('error', (err) => console.error('Redis Error:', err));
+    redisClient.on('connect', () => console.log('✅ Redis conectado!'));
+    
+    await redisClient.connect();
+  }
+  return redisClient;
+}
 
 // =================================================================
 // CONFIGURAÇÃO DO EJS
@@ -241,52 +228,6 @@ class ArticleService {
     
     return articles;
   }
-  
-  static async updateArticle(slug, updates) {
-    const redis = await getRedisClient();
-    const oldArticle = await this.getArticle(slug);
-    if (!oldArticle) return null;
-    
-    let newSlug = slug;
-    if (updates.title && updates.title !== oldArticle.title) {
-      newSlug = slugify(updates.title, { lower: true, strict: true });
-      const oldData = await redis.hgetall(`article:${slug}`);
-      await redis.hset(`article:${newSlug}`, oldData);
-      await redis.del(`article:${slug}`);
-      
-      await redis.srem('articles:all', slug);
-      await redis.sadd('articles:all', newSlug);
-      if (oldArticle.published === 'true') {
-        await redis.zrem('articles:published', slug);
-        await redis.zadd('articles:published', Date.now(), newSlug);
-      }
-    }
-    
-    updates.updatedAt = new Date().toISOString();
-    await redis.hset(`article:${newSlug}`, updates);
-    
-    return this.getArticle(newSlug);
-  }
-  
-  static async deleteArticle(slug) {
-    const redis = await getRedisClient();
-    const article = await this.getArticle(slug);
-    if (!article) return false;
-    
-    await redis.del(`article:${slug}`);
-    await redis.srem('articles:all', slug);
-    await redis.zrem('articles:published', slug);
-    await redis.srem(`articles:category:${article.category}`, slug);
-    
-    if (article.tags) {
-      const tags = JSON.parse(article.tags);
-      for (const tag of tags) {
-        await redis.srem(`articles:tag:${tag}`, slug);
-      }
-    }
-    
-    return true;
-  }
 }
 
 // =================================================================
@@ -303,6 +244,28 @@ app.get('/', async (req, res) => {
     const { articles, total, totalPages } = await ArticleService.listArticles(page, 9, category, search);
     const popular = await ArticleService.getPopularArticles(5);
     
+    // Criar views se não existirem
+    const viewsPath = path.join(__dirname, 'views');
+    const fs = require('fs');
+    
+    if (!fs.existsSync(`${viewsPath}/index.ejs`)) {
+      return res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>ModoDigital</title><script src="https://cdn.tailwindcss.com"></script></head>
+        <body class="bg-gray-100">
+          <div class="container mx-auto px-4 py-8">
+            <h1 class="text-4xl font-bold text-blue-600">ModoDigital</h1>
+            <p class="text-xl mt-2">Blog sobre tecnologia, marketing e produtividade</p>
+            <p class="mt-4">Total de artigos: ${total}</p>
+            <a href="/admin/login" class="inline-block mt-4 bg-blue-600 text-white px-4 py-2 rounded">Admin</a>
+            <a href="/redis-test" class="inline-block ml-4 bg-green-600 text-white px-4 py-2 rounded">Test Redis</a>
+          </div>
+        </body>
+        </html>
+      `);
+    }
+    
     res.render('index', {
       articles,
       popular,
@@ -314,7 +277,7 @@ app.get('/', async (req, res) => {
     });
   } catch (error) {
     console.error(error);
-    res.status(500).send('Erro interno');
+    res.status(500).send(`<h1>Erro</h1><pre>${error.message}</pre>`);
   }
 });
 
@@ -324,10 +287,31 @@ app.get('/artigo/:slug', async (req, res) => {
     const article = await ArticleService.getArticle(req.params.slug);
     
     if (!article || article.published === 'false') {
-      return res.status(404).render('404', { siteConfig: res.locals.siteConfig });
+      return res.status(404).send('<h1>Artigo não encontrado</h1>');
     }
     
     const related = await ArticleService.getRelatedArticles(article.category, article.slug, 3);
+    
+    const fs = require('fs');
+    const viewsPath = path.join(__dirname, 'views');
+    
+    if (!fs.existsSync(`${viewsPath}/article.ejs`)) {
+      return res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>${article.title}</title><script src="https://cdn.tailwindcss.com"></script></head>
+        <body class="bg-gray-100">
+          <div class="container mx-auto px-4 py-8 max-w-4xl">
+            <h1 class="text-4xl font-bold">${article.title}</h1>
+            <div class="text-gray-600 mt-2">Por ${article.author} | ${new Date(article.createdAt).toLocaleDateString()}</div>
+            <img src="${article.coverImage}" class="mt-4 rounded-lg w-full">
+            <div class="mt-6 prose">${article.content}</div>
+            <a href="/" class="inline-block mt-6 text-blue-600">← Voltar</a>
+          </div>
+        </body>
+        </html>
+      `);
+    }
     
     res.render('article', {
       article,
@@ -336,50 +320,12 @@ app.get('/artigo/:slug', async (req, res) => {
     });
   } catch (error) {
     console.error(error);
-    res.status(500).send('Erro interno');
-  }
-});
-
-// Categoria
-app.get('/categoria/:category', async (req, res) => {
-  try {
-    const page = parseInt(req.query.page) || 1;
-    const { articles, totalPages } = await ArticleService.listArticles(page, 12, req.params.category);
-    
-    res.render('category', {
-      articles,
-      category: req.params.category,
-      totalPages,
-      currentPage: page,
-      siteConfig: res.locals.siteConfig
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).send('Erro interno');
-  }
-});
-
-// Busca
-app.get('/buscar', async (req, res) => {
-  try {
-    const q = req.query.q;
-    if (!q) return res.redirect('/');
-    
-    const { articles } = await ArticleService.listArticles(1, 50, null, q);
-    
-    res.render('search', {
-      articles,
-      query: q,
-      siteConfig: res.locals.siteConfig
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).send('Erro interno');
+    res.status(500).send(`<h1>Erro</h1><pre>${error.message}</pre>`);
   }
 });
 
 // =================================================================
-// ROTAS ADMIN
+// ROTAS ADMIN SIMPLES
 // =================================================================
 
 // Login admin
@@ -387,18 +333,31 @@ app.get('/admin/login', (req, res) => {
   if (req.session.isAdmin) {
     return res.redirect('/admin/dashboard');
   }
-  res.render('admin/login', { error: null });
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head><title>Admin Login</title><script src="https://cdn.tailwindcss.com"></script></head>
+    <body class="bg-gray-100 min-h-screen flex items-center justify-center">
+      <div class="bg-white p-8 rounded-lg shadow-lg max-w-md w-full">
+        <h1 class="text-2xl font-bold text-center mb-6">🔐 Admin Login</h1>
+        <form method="POST" action="/admin/login">
+          <input type="password" name="password" placeholder="Senha" class="w-full p-3 border rounded-lg mb-4">
+          <button type="submit" class="w-full bg-blue-600 text-white p-3 rounded-lg hover:bg-blue-700">Entrar</button>
+        </form>
+        <div class="text-center mt-4"><a href="/" class="text-blue-600">← Voltar ao site</a></div>
+      </div>
+    </body>
+    </html>
+  `);
 });
 
-app.post('/admin/login', async (req, res) => {
-  const { password } = req.body;
-  const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
-  
-  if (password === adminPassword) {
+app.post('/admin/login', (req, res) => {
+  const adminPass = process.env.ADMIN_PASSWORD || 'admin123';
+  if (req.body.password === adminPass) {
     req.session.isAdmin = true;
     res.redirect('/admin/dashboard');
   } else {
-    res.render('admin/login', { error: 'Senha incorreta' });
+    res.send('<h1>Senha incorreta!</h1><a href="/admin/login">Tentar novamente</a>');
   }
 });
 
@@ -413,17 +372,37 @@ app.get('/admin/dashboard', async (req, res) => {
   
   try {
     const { articles, total } = await ArticleService.listArticles(1, 1000);
-    const popular = await ArticleService.getPopularArticles(5);
-    
-    res.render('admin/dashboard', {
-      totalArticles: total,
-      popularArticles: popular,
-      recentArticles: articles.slice(0, 5),
-      siteConfig: res.locals.siteConfig
-    });
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head><title>Admin Dashboard</title><script src="https://cdn.tailwindcss.com"></script></head>
+      <body class="bg-gray-100">
+        <div class="container mx-auto px-4 py-8">
+          <div class="bg-white rounded-lg shadow p-6">
+            <h1 class="text-2xl font-bold mb-4">✅ Painel Administrativo</h1>
+            <p class="mb-4">Total de artigos: <strong>${total}</strong></p>
+            <div class="bg-green-100 p-4 rounded mb-4">
+              ✅ Redis Cloud conectado com sucesso!
+            </div>
+            <div class="flex gap-4">
+              <a href="/admin/articles/new" class="bg-green-600 text-white px-4 py-2 rounded">📝 Novo Artigo</a>
+              <a href="/admin/articles" class="bg-blue-600 text-white px-4 py-2 rounded">📋 Listar Artigos</a>
+              <a href="/" class="bg-gray-600 text-white px-4 py-2 rounded">🌐 Ver Site</a>
+              <a href="/admin/logout" class="bg-red-600 text-white px-4 py-2 rounded">🚪 Sair</a>
+            </div>
+            <div class="mt-6">
+              <h2 class="font-bold mb-2">Últimos Artigos:</h2>
+              <ul class="list-disc pl-5">
+                ${articles.slice(0, 5).map(a => `<li><a href="/artigo/${a.slug}" target="_blank">${a.title}</a></li>`).join('')}
+              </ul>
+            </div>
+          </div>
+        </div>
+      </body>
+      </html>
+    `);
   } catch (error) {
-    console.error(error);
-    res.status(500).send('Erro interno');
+    res.status(500).send('Erro');
   }
 });
 
@@ -432,184 +411,94 @@ app.get('/admin/articles', async (req, res) => {
   if (!req.session.isAdmin) return res.redirect('/admin/login');
   
   try {
-    const page = parseInt(req.query.page) || 1;
-    const search = req.query.search;
-    const { articles, total, totalPages } = await ArticleService.listArticles(page, 20, null, search);
-    
-    res.render('admin/articles', {
-      articles,
-      total,
-      totalPages,
-      currentPage: page,
-      search: search || '',
-      siteConfig: res.locals.siteConfig
-    });
+    const { articles } = await ArticleService.listArticles(1, 100);
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head><title>Artigos</title><script src="https://cdn.tailwindcss.com"></script></head>
+      <body class="bg-gray-100">
+        <div class="container mx-auto px-4 py-8">
+          <div class="bg-white rounded-lg shadow p-6">
+            <h1 class="text-2xl font-bold mb-4">📋 Artigos</h1>
+            <a href="/admin/dashboard" class="text-blue-600 mb-4 inline-block">← Voltar</a>
+            <table class="w-full mt-4">
+              <thead><tr class="border-b"><th class="text-left py-2">Título</th><th>Categoria</th><th>Status</th><th>Ações</th></tr></thead>
+              <tbody>
+                ${articles.map(a => `
+                  <tr class="border-b">
+                    <td class="py-2">${a.title}</td>
+                    <td>${a.category}</td>
+                    <td>${a.published === 'true' ? '✅ Publicado' : '📝 Rascunho'}</td>
+                    <td>
+                      <a href="/artigo/${a.slug}" target="_blank" class="text-blue-600">Ver</a>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </body>
+      </html>
+    `);
   } catch (error) {
-    console.error(error);
-    res.status(500).send('Erro interno');
+    res.status(500).send('Erro');
   }
 });
 
 // Criar artigo
 app.get('/admin/articles/new', (req, res) => {
   if (!req.session.isAdmin) return res.redirect('/admin/login');
-  res.render('admin/edit', { article: null, isNew: true });
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head><title>Novo Artigo</title><script src="https://cdn.tailwindcss.com"></script></head>
+    <body class="bg-gray-100">
+      <div class="container mx-auto px-4 py-8 max-w-4xl">
+        <div class="bg-white rounded-lg shadow p-6">
+          <h1 class="text-2xl font-bold mb-4">📝 Novo Artigo</h1>
+          <form method="POST" action="/admin/articles/new">
+            <input type="text" name="title" placeholder="Título" class="w-full p-3 border rounded mb-3" required>
+            <select name="category" class="w-full p-3 border rounded mb-3">
+              <option value="Tecnologia">Tecnologia</option>
+              <option value="Marketing">Marketing</option>
+              <option value="Produtividade">Produtividade</option>
+            </select>
+            <input type="text" name="author" placeholder="Autor" class="w-full p-3 border rounded mb-3" value="Admin">
+            <textarea name="content" placeholder="Conteúdo do artigo (HTML/Markdown)" rows="10" class="w-full p-3 border rounded mb-3" required></textarea>
+            <input type="text" name="coverImage" placeholder="URL da imagem destacada" class="w-full p-3 border rounded mb-3">
+            <div class="flex items-center mb-4">
+              <input type="checkbox" name="published" class="mr-2"> Publicar agora
+            </div>
+            <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded">Salvar Artigo</button>
+            <a href="/admin/dashboard" class="ml-2 text-gray-600">Cancelar</a>
+          </form>
+        </div>
+      </div>
+    </body>
+    </html>
+  `);
 });
 
 app.post('/admin/articles/new', async (req, res) => {
   if (!req.session.isAdmin) return res.redirect('/admin/login');
   
   try {
-    const { title, content, excerpt, coverImage, coverAlt, author, category, tags, metaTitle, metaDescription, keywords, published } = req.body;
-    const tagsArray = tags ? tags.split(',').map(t => t.trim()) : [];
+    const { title, content, author, category, coverImage, published } = req.body;
     
     await ArticleService.createArticle({
       title,
-      content,
-      excerpt,
-      coverImage,
-      coverAlt,
+      content: content || '<p>Conteúdo do artigo</p>',
+      excerpt: content?.substring(0, 160),
+      coverImage: coverImage || 'https://picsum.photos/id/1/1200/630',
       author,
       category,
-      tags: tagsArray,
-      metaTitle,
-      metaDescription,
-      keywords,
       published: published === 'on'
     });
     
     res.redirect('/admin/articles');
   } catch (error) {
-    console.error(error);
-    res.status(500).send('Erro ao criar artigo');
-  }
-});
-
-// Editar artigo
-app.get('/admin/articles/edit/:slug', async (req, res) => {
-  if (!req.session.isAdmin) return res.redirect('/admin/login');
-  
-  try {
-    const article = await ArticleService.getArticle(req.params.slug);
-    if (!article) return res.status(404).send('Artigo não encontrado');
-    
-    if (article.tags && typeof article.tags === 'string') {
-      try {
-        article.tagsArray = JSON.parse(article.tags).join(', ');
-      } catch {
-        article.tagsArray = article.tags;
-      }
-    }
-    
-    res.render('admin/edit', { article, isNew: false });
-  } catch (error) {
-    console.error(error);
-    res.status(500).send('Erro interno');
-  }
-});
-
-app.post('/admin/articles/edit/:slug', async (req, res) => {
-  if (!req.session.isAdmin) return res.redirect('/admin/login');
-  
-  try {
-    const { title, content, excerpt, coverImage, coverAlt, author, category, tags, metaTitle, metaDescription, keywords, published } = req.body;
-    const tagsArray = tags ? tags.split(',').map(t => t.trim()) : [];
-    
-    await ArticleService.updateArticle(req.params.slug, {
-      title,
-      content,
-      excerpt,
-      coverImage,
-      coverAlt,
-      author,
-      category,
-      tags: tagsArray,
-      metaTitle,
-      metaDescription,
-      keywords,
-      published: published === 'on'
-    });
-    
-    res.redirect('/admin/articles');
-  } catch (error) {
-    console.error(error);
-    res.status(500).send('Erro ao atualizar artigo');
-  }
-});
-
-// Deletar artigo
-app.post('/admin/articles/delete/:slug', async (req, res) => {
-  if (!req.session.isAdmin) return res.redirect('/admin/login');
-  
-  try {
-    await ArticleService.deleteArticle(req.params.slug);
-    res.redirect('/admin/articles');
-  } catch (error) {
-    console.error(error);
-    res.status(500).send('Erro ao deletar artigo');
-  }
-});
-
-// Configurações
-app.get('/admin/settings', async (req, res) => {
-  if (!req.session.isAdmin) return res.redirect('/admin/login');
-  
-  try {
-    const redis = await getRedisClient();
-    const config = await redis.hgetall('site:config');
-    res.render('admin/settings', { config });
-  } catch (error) {
-    console.error(error);
-    res.status(500).send('Erro interno');
-  }
-});
-
-app.post('/admin/settings', async (req, res) => {
-  if (!req.session.isAdmin) return res.redirect('/admin/login');
-  
-  try {
-    const redis = await getRedisClient();
-    const { title, description, keywords, siteUrl } = req.body;
-    await redis.hset('site:config', { title, description, keywords, siteUrl });
-    res.redirect('/admin/settings');
-  } catch (error) {
-    console.error(error);
-    res.status(500).send('Erro ao salvar configurações');
-  }
-});
-
-// =================================================================
-// ROTAS API
-// =================================================================
-app.get('/api/articles', async (req, res) => {
-  try {
-    const page = parseInt(req.query.page) || 1;
-    const category = req.query.category;
-    const search = req.query.search;
-    const data = await ArticleService.listArticles(page, 12, category, search);
-    res.json(data);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.get('/api/articles/:slug', async (req, res) => {
-  try {
-    const article = await ArticleService.getArticle(req.params.slug);
-    if (!article) return res.status(404).json({ error: 'Artigo não encontrado' });
-    res.json(article);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.get('/api/stats', async (req, res) => {
-  try {
-    const { total } = await ArticleService.listArticles(1, 1000);
-    const popular = await ArticleService.getPopularArticles(5);
-    res.json({ totalArticles: total, popular });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).send('Erro ao criar artigo: ' + error.message);
   }
 });
 
