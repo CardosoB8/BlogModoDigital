@@ -11,21 +11,15 @@ const { v4: uuidv4 } = require('uuid');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// =================================================================
-// CONFIGURAÇÕES DE SEGURANÇA
-// =================================================================
+// Configurações de segurança
 app.set('trust proxy', 1);
-
-app.use(helmet({
-  contentSecurityPolicy: false
-}));
-
+app.use(helmet({ contentSecurityPolicy: false }));
 app.use(compression());
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
-  message: { error: 'Muitas requisições, tente novamente em 15 minutos.' }
+  message: { error: 'Muitas requisições' }
 });
 app.use('/api/', limiter);
 
@@ -75,11 +69,11 @@ class ArticleService {
     const now = new Date().toISOString();
     
     const article = {
-      id,
-      slug,
-      title: data.title,
+      id: id,
+      slug: slug,
+      title: data.title || '',
       content: data.content || '<p>Conteúdo do artigo</p>',
-      excerpt: data.excerpt || (data.content ? data.content.substring(0, 160).replace(/<[^>]*>/g, '') : 'Artigo sem resumo'),
+      excerpt: data.excerpt || (data.content ? data.content.replace(/<[^>]*>/g, '').substring(0, 160) : 'Artigo sem resumo'),
       coverImage: data.coverImage || 'https://picsum.photos/id/1/1200/630',
       coverAlt: data.coverAlt || data.title,
       author: data.author || 'Admin',
@@ -94,23 +88,36 @@ class ArticleService {
       views: '0'
     };
     
-    // Salvar artigo como hash
-    await redis.hSet(`article:${slug}`, article);
+    // CORREÇÃO: Usar hSet com campos separados
+    await redis.hSet(`article:${slug}`, 
+      'id', article.id,
+      'slug', article.slug,
+      'title', article.title,
+      'content', article.content,
+      'excerpt', article.excerpt,
+      'coverImage', article.coverImage,
+      'coverAlt', article.coverAlt,
+      'author', article.author,
+      'category', article.category,
+      'tags', article.tags,
+      'metaTitle', article.metaTitle,
+      'metaDescription', article.metaDescription,
+      'keywords', article.keywords,
+      'published', article.published,
+      'createdAt', article.createdAt,
+      'updatedAt', article.updatedAt,
+      'views', article.views
+    );
     
     // Adicionar ao índice de todos os artigos
     await redis.sAdd('articles:all', slug);
     
     if (article.published === 'true') {
-      // Usar sorted set com timestamp como score
       await redis.zAdd('articles:published', { score: Date.now(), value: slug });
       await redis.sAdd(`articles:category:${article.category}`, slug);
-      if (data.tags && data.tags.length) {
-        for (const tag of data.tags) {
-          await redis.sAdd(`articles:tag:${tag}`, slug);
-        }
-      }
     }
     
+    console.log(`✅ Artigo criado: ${slug}`);
     return article;
   }
   
@@ -123,8 +130,6 @@ class ArticleService {
     // Incrementar views
     const views = parseInt(article.views || '0') + 1;
     await redis.hSet(`article:${slug}`, 'views', views.toString());
-    
-    // Atualizar ranking de views
     await redis.zIncrBy('articles:views', 1, slug);
     
     return article;
@@ -135,15 +140,12 @@ class ArticleService {
     let slugs = [];
     
     if (category && category !== 'all' && category !== 'null') {
-      // Buscar por categoria
       slugs = await redis.sMembers(`articles:category:${category}`);
     } else {
-      // Buscar todos publicados ordenados por data (mais recentes primeiro)
       const allSlugs = await redis.zRange('articles:published', 0, -1);
       slugs = allSlugs.reverse();
     }
     
-    // Filtrar por busca se necessário
     if (search) {
       const searchLower = search.toLowerCase();
       const filtered = [];
@@ -158,7 +160,6 @@ class ArticleService {
       slugs = filtered;
     }
     
-    // Paginação
     const start = (page - 1) * limit;
     const paginatedSlugs = slugs.slice(start, start + limit);
     
@@ -180,25 +181,10 @@ class ArticleService {
   
   static async getPopularArticles(limit = 5) {
     const redis = await getRedisClient();
-    // Pegar artigos mais vistos
     const slugs = await redis.zRange('articles:views', 0, limit - 1);
     const articles = [];
     
     for (const slug of slugs.reverse()) {
-      const article = await this.getArticle(slug);
-      if (article && article.published === 'true') articles.push(article);
-    }
-    
-    return articles;
-  }
-  
-  static async getRelatedArticles(category, currentSlug, limit = 3) {
-    const redis = await getRedisClient();
-    const slugs = await redis.sMembers(`articles:category:${category}`);
-    const filtered = slugs.filter(slug => slug !== currentSlug).slice(0, limit);
-    const articles = [];
-    
-    for (const slug of filtered) {
       const article = await this.getArticle(slug);
       if (article && article.published === 'true') articles.push(article);
     }
@@ -217,19 +203,6 @@ class ArticleService {
     }
     
     return articles;
-  }
-  
-  static async deleteArticle(slug) {
-    const redis = await getRedisClient();
-    const article = await this.getArticle(slug);
-    if (!article) return false;
-    
-    await redis.del(`article:${slug}`);
-    await redis.sRem('articles:all', slug);
-    await redis.zRem('articles:published', slug);
-    await redis.sRem(`articles:category:${article.category}`, slug);
-    
-    return true;
   }
 }
 
@@ -267,22 +240,17 @@ app.use(async (req, res, next) => {
 // ROTAS DO SITE
 // =================================================================
 
-// Rota admin principal (redireciona para login)
 app.get('/admin', (req, res) => {
-  if (req.session.isAdmin) {
-    return res.redirect('/admin/dashboard');
-  }
+  if (req.session.isAdmin) return res.redirect('/admin/dashboard');
   res.redirect('/admin/login');
 });
 
-// Homepage
 app.get('/', async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const { articles, total, totalPages } = await ArticleService.listArticles(page, 9);
     const popular = await ArticleService.getPopularArticles(5);
     
-    // HTML inline para não depender de views
     res.send(`
       <!DOCTYPE html>
       <html lang="pt">
@@ -290,29 +258,16 @@ app.get('/', async (req, res) => {
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>${res.locals.siteConfig.title} - Blog de Tecnologia</title>
-        <meta name="description" content="${res.locals.siteConfig.description}">
         <script src="https://cdn.tailwindcss.com"></script>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-        <style>
-          body { font-family: 'Inter', sans-serif; }
-        </style>
       </head>
       <body class="bg-gray-50">
-        <!-- Header -->
         <header class="bg-white shadow-sm sticky top-0 z-50">
           <div class="container mx-auto px-4 py-4 flex justify-between items-center">
             <a href="/" class="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
               ${res.locals.siteConfig.title}
             </a>
-            <nav class="hidden md:flex gap-6">
-              <a href="/" class="hover:text-blue-600">Início</a>
-              <a href="/categoria/Tecnologia" class="hover:text-blue-600">Tecnologia</a>
-              <a href="/categoria/Marketing" class="hover:text-blue-600">Marketing</a>
-              <a href="/categoria/Produtividade" class="hover:text-blue-600">Produtividade</a>
-            </nav>
-            <div class="flex gap-2">
-              <a href="/admin" class="text-gray-600 hover:text-blue-600">🔐 Admin</a>
-            </div>
+            <a href="/admin" class="text-gray-600 hover:text-blue-600">🔐 Admin</a>
           </div>
         </header>
         
@@ -331,33 +286,26 @@ app.get('/', async (req, res) => {
                   <h2 class="text-xl font-bold mt-2 mb-3 hover:text-blue-600">
                     <a href="/artigo/${article.slug}">${article.title}</a>
                   </h2>
-                  <p class="text-gray-600 text-sm line-clamp-3">${article.excerpt}</p>
+                  <p class="text-gray-600 text-sm">${article.excerpt.substring(0, 120)}...</p>
                   <div class="flex justify-between items-center mt-4 text-xs text-gray-500">
                     <span>👤 ${article.author}</span>
                     <span>📅 ${new Date(article.createdAt).toLocaleDateString('pt-BR')}</span>
-                    <span>👁️ ${article.views}</span>
                   </div>
                 </div>
               </article>
             `).join('')}
           </div>
           
-          ${totalPages > 1 ? `
-            <div class="flex justify-center gap-2">
-              ${Array.from({ length: Math.min(totalPages, 5) }, (_, i) => i + 1).map(p => `
-                <a href="/?page=${p}" class="px-4 py-2 rounded ${page === p ? 'bg-blue-600 text-white' : 'bg-gray-200 hover:bg-blue-100'}">${p}</a>
-              `).join('')}
-            </div>
-          ` : ''}
+          ${articles.length === 0 ? '<p class="text-center text-gray-500">Nenhum artigo publicado ainda.</p>' : ''}
           
           <div class="mt-12 text-center">
-            <a href="/admin/login" class="inline-block bg-gray-800 text-white px-6 py-3 rounded-lg hover:bg-gray-700">Área Administrativa</a>
+            <a href="/admin/login" class="inline-block bg-gray-800 text-white px-6 py-3 rounded-lg hover:bg-gray-700">📝 Área Administrativa</a>
           </div>
         </main>
         
         <footer class="bg-gray-900 text-gray-300 mt-12 py-8">
           <div class="container mx-auto px-4 text-center text-sm">
-            &copy; 2026 ${res.locals.siteConfig.title} - Todos os direitos reservados
+            &copy; 2026 ${res.locals.siteConfig.title}
           </div>
         </footer>
       </body>
@@ -369,16 +317,13 @@ app.get('/', async (req, res) => {
   }
 });
 
-// Artigo individual
 app.get('/artigo/:slug', async (req, res) => {
   try {
     const article = await ArticleService.getArticle(req.params.slug);
     
     if (!article || article.published === 'false') {
-      return res.status(404).send('<h1>Artigo não encontrado</h1><a href="/">Voltar ao início</a>');
+      return res.status(404).send('<h1>Artigo não encontrado</h1><a href="/">Voltar</a>');
     }
-    
-    const related = await ArticleService.getRelatedArticles(article.category, article.slug, 3);
     
     res.send(`
       <!DOCTYPE html>
@@ -386,23 +331,12 @@ app.get('/artigo/:slug', async (req, res) => {
       <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>${article.metaTitle || article.title} | ${res.locals.siteConfig.title}</title>
-        <meta name="description" content="${article.metaDescription || article.excerpt}">
-        <meta name="keywords" content="${article.keywords || article.category}">
+        <title>${article.title} | ${res.locals.siteConfig.title}</title>
+        <meta name="description" content="${article.excerpt}">
         <meta property="og:title" content="${article.title}">
         <meta property="og:description" content="${article.excerpt}">
         <meta property="og:image" content="${article.coverImage}">
-        <meta property="og:type" content="article">
-        <meta name="twitter:card" content="summary_large_image">
         <script src="https://cdn.tailwindcss.com"></script>
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-        <style>
-          body { font-family: 'Inter', sans-serif; }
-          .article-content { max-width: 100%; line-height: 1.8; }
-          .article-content p { margin-bottom: 1rem; }
-          .article-content h2 { font-size: 1.5rem; margin: 1.5rem 0 1rem; }
-          .article-content img { max-width: 100%; border-radius: 0.5rem; margin: 1rem 0; }
-        </style>
       </head>
       <body class="bg-gray-50">
         <header class="bg-white shadow-sm sticky top-0 z-50">
@@ -423,22 +357,8 @@ app.get('/artigo/:slug', async (req, res) => {
               <span>👁️ ${article.views} visualizações</span>
             </div>
             <img src="${article.coverImage}" alt="${article.title}" class="w-full rounded-lg mb-6">
-            <div class="article-content">${article.content}</div>
+            <div class="prose max-w-none">${article.content}</div>
           </article>
-          
-          ${related.length ? `
-            <div class="mt-8">
-              <h3 class="text-xl font-bold mb-4">📖 Artigos Relacionados</h3>
-              <div class="grid md:grid-cols-3 gap-4">
-                ${related.map(rel => `
-                  <a href="/artigo/${rel.slug}" class="bg-white rounded-lg shadow p-4 hover:shadow-md transition">
-                    <img src="${rel.coverImage}" class="w-full h-32 object-cover rounded mb-2">
-                    <h4 class="font-semibold hover:text-blue-600">${rel.title}</h4>
-                  </a>
-                `).join('')}
-              </div>
-            </div>
-          ` : ''}
           
           <div class="mt-8 text-center">
             <a href="/" class="text-blue-600 hover:underline">← Voltar para o início</a>
@@ -459,37 +379,6 @@ app.get('/artigo/:slug', async (req, res) => {
   }
 });
 
-// Categoria
-app.get('/categoria/:category', async (req, res) => {
-  try {
-    const { articles } = await ArticleService.listArticles(1, 50, req.params.category);
-    
-    res.send(`
-      <!DOCTYPE html>
-      <html>
-      <head><title>${req.params.category} | ${res.locals.siteConfig.title}</title>
-      <script src="https://cdn.tailwindcss.com"></script></head>
-      <body class="bg-gray-50">
-        <div class="container mx-auto px-4 py-8">
-          <h1 class="text-3xl font-bold mb-6">📁 ${req.params.category}</h1>
-          <a href="/" class="text-blue-600 mb-4 inline-block">← Voltar</a>
-          <div class="grid md:grid-cols-3 gap-6">
-            ${articles.map(article => `
-              <a href="/artigo/${article.slug}" class="bg-white rounded-lg shadow p-4 hover:shadow-lg">
-                <h2 class="font-bold text-lg hover:text-blue-600">${article.title}</h2>
-                <p class="text-sm text-gray-500 mt-2">${new Date(article.createdAt).toLocaleDateString()}</p>
-              </a>
-            `).join('')}
-          </div>
-        </div>
-      </body>
-      </html>
-    `);
-  } catch (error) {
-    res.status(500).send('Erro');
-  }
-});
-
 // =================================================================
 // ROTAS ADMIN
 // =================================================================
@@ -507,7 +396,7 @@ app.get('/admin/login', (req, res) => {
           <input type="password" name="password" placeholder="Senha" class="w-full p-3 border rounded-lg mb-4">
           <button type="submit" class="w-full bg-blue-600 text-white p-3 rounded-lg hover:bg-blue-700">Entrar</button>
         </form>
-        <div class="text-center mt-4"><a href="/" class="text-blue-600">← Voltar ao site</a></div>
+        <div class="text-center mt-4"><a href="/" class="text-blue-600">← Voltar</a></div>
       </div>
     </body>
     </html>
@@ -549,12 +438,6 @@ app.get('/admin/dashboard', async (req, res) => {
             <a href="/" class="bg-gray-600 text-white px-4 py-2 rounded">🌐 Ver Site</a>
             <a href="/admin/logout" class="bg-red-600 text-white px-4 py-2 rounded">🚪 Sair</a>
           </div>
-          <div class="mt-6">
-            <h2 class="font-bold mb-2">Últimos Artigos:</h2>
-            <ul class="list-disc pl-5">
-              ${articles.slice(0, 5).map(a => `<li><a href="/artigo/${a.slug}" target="_blank">${a.title}</a> (${a.category})</li>`).join('')}
-            </ul>
-          </div>
         </div>
       </div>
     </body>
@@ -575,19 +458,18 @@ app.get('/admin/articles', async (req, res) => {
         <div class="bg-white rounded-lg shadow p-6">
           <h1 class="text-2xl font-bold mb-4">📋 Todos os Artigos</h1>
           <a href="/admin/dashboard" class="text-blue-600 mb-4 inline-block">← Voltar</a>
-          <table class="w-full mt-4">
-            <thead><tr class="border-b"><th class="text-left py-2">Título</th><th>Categoria</th><th>Status</th><th>Ações</th></tr></thead>
-            <tbody>
-              ${articles.map(a => `
-                <tr class="border-b">
-                  <td class="py-2">${a.title}</td>
-                  <td>${a.category}</td>
-                  <td>${a.published === 'true' ? '✅ Publicado' : '📝 Rascunho'}</td>
-                  <td><a href="/artigo/${a.slug}" target="_blank" class="text-blue-600">Ver</a></td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
+          <div class="grid gap-4 mt-4">
+            ${articles.map(a => `
+              <div class="border rounded-lg p-4 flex justify-between items-center">
+                <div>
+                  <h3 class="font-bold">${a.title}</h3>
+                  <p class="text-sm text-gray-500">${a.category} | ${a.author} | ${new Date(a.createdAt).toLocaleDateString()}</p>
+                </div>
+                <a href="/artigo/${a.slug}" target="_blank" class="bg-blue-600 text-white px-3 py-1 rounded text-sm">Ver</a>
+              </div>
+            `).join('')}
+          </div>
+          ${articles.length === 0 ? '<p class="text-center text-gray-500">Nenhum artigo criado ainda.</p>' : ''}
         </div>
       </div>
     </body>
@@ -604,22 +486,42 @@ app.get('/admin/articles/new', (req, res) => {
     <body class="bg-gray-100">
       <div class="container mx-auto px-4 py-8 max-w-4xl">
         <div class="bg-white rounded-lg shadow p-6">
-          <h1 class="text-2xl font-bold mb-4">📝 Novo Artigo</h1>
+          <h1 class="text-2xl font-bold mb-4">📝 Criar Novo Artigo</h1>
           <form method="POST" action="/admin/articles/new">
-            <input type="text" name="title" placeholder="Título do artigo" class="w-full p-3 border rounded mb-3" required>
-            <select name="category" class="w-full p-3 border rounded mb-3">
-              <option value="Tecnologia">Tecnologia</option>
-              <option value="Marketing">Marketing</option>
-              <option value="Produtividade">Produtividade</option>
-            </select>
-            <input type="text" name="author" placeholder="Autor" class="w-full p-3 border rounded mb-3" value="Admin">
-            <textarea name="content" placeholder="Conteúdo do artigo (HTML ou Markdown)" rows="12" class="w-full p-3 border rounded mb-3 font-mono text-sm" required></textarea>
-            <input type="text" name="coverImage" placeholder="URL da imagem destacada" class="w-full p-3 border rounded mb-3">
-            <div class="flex items-center mb-4">
-              <input type="checkbox" name="published" class="mr-2" checked> Publicar agora
+            <div class="mb-4">
+              <label class="block font-bold mb-2">Título *</label>
+              <input type="text" name="title" class="w-full p-3 border rounded" required>
             </div>
-            <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">Salvar Artigo</button>
-            <a href="/admin/dashboard" class="ml-2 text-gray-600">Cancelar</a>
+            <div class="mb-4">
+              <label class="block font-bold mb-2">Categoria</label>
+              <select name="category" class="w-full p-3 border rounded">
+                <option value="Tecnologia">Tecnologia</option>
+                <option value="Marketing">Marketing</option>
+                <option value="Produtividade">Produtividade</option>
+              </select>
+            </div>
+            <div class="mb-4">
+              <label class="block font-bold mb-2">Autor</label>
+              <input type="text" name="author" value="Admin" class="w-full p-3 border rounded">
+            </div>
+            <div class="mb-4">
+              <label class="block font-bold mb-2">URL da Imagem (opcional)</label>
+              <input type="text" name="coverImage" placeholder="https://..." class="w-full p-3 border rounded">
+            </div>
+            <div class="mb-4">
+              <label class="block font-bold mb-2">Conteúdo *</label>
+              <textarea name="content" rows="12" class="w-full p-3 border rounded font-mono text-sm" required></textarea>
+              <p class="text-xs text-gray-500 mt-1">Você pode usar HTML: &lt;p&gt;, &lt;h2&gt;, &lt;img&gt;, &lt;ul&gt;, etc.</p>
+            </div>
+            <div class="mb-4">
+              <label class="flex items-center">
+                <input type="checkbox" name="published" class="mr-2" checked> Publicar imediatamente
+              </label>
+            </div>
+            <div class="flex gap-3">
+              <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">💾 Salvar Artigo</button>
+              <a href="/admin/dashboard" class="bg-gray-500 text-white px-6 py-2 rounded hover:bg-gray-600">Cancelar</a>
+            </div>
           </form>
         </div>
       </div>
@@ -634,18 +536,37 @@ app.post('/admin/articles/new', async (req, res) => {
   try {
     const { title, content, author, category, coverImage, published } = req.body;
     
-    await ArticleService.createArticle({
-      title,
-      content: content || '<p>Conteúdo do artigo</p>',
+    if (!title || !content) {
+      throw new Error('Título e conteúdo são obrigatórios');
+    }
+    
+    const article = await ArticleService.createArticle({
+      title: title,
+      content: content,
       author: author || 'Admin',
       category: category || 'Tecnologia',
       coverImage: coverImage || 'https://picsum.photos/id/1/1200/630',
       published: published === 'on'
     });
     
+    console.log('✅ Artigo criado:', article.slug);
     res.redirect('/admin/articles');
   } catch (error) {
-    res.status(500).send('Erro ao criar artigo: ' + error.message);
+    console.error('Erro ao criar artigo:', error);
+    res.status(500).send(`
+      <!DOCTYPE html>
+      <html>
+      <head><title>Erro</title><script src="https://cdn.tailwindcss.com"></script></head>
+      <body class="bg-gray-100 p-8">
+        <div class="max-w-2xl mx-auto bg-white p-6 rounded shadow">
+          <h1 class="text-2xl font-bold text-red-600 mb-4">Erro ao criar artigo</h1>
+          <p class="mb-4">${error.message}</p>
+          <pre class="bg-gray-100 p-4 rounded text-sm overflow-auto">${error.stack || ''}</pre>
+          <a href="/admin/articles/new" class="inline-block mt-4 bg-blue-600 text-white px-4 py-2 rounded">Voltar</a>
+        </div>
+      </body>
+      </html>
+    `);
   }
 });
 
